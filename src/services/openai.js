@@ -18,17 +18,18 @@ export async function analyzeIngredients(ingredients) {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                ...OPENAI_CONFIG,
+                model: "gpt-4o",
                 messages: [
                     {
                         role: "system",
-                        content: "You are a halal food expert. Analyze the given ingredients and determine if they are halal. Consider common non-halal ingredients like alcohol, pork derivatives, and animal-derived ingredients of unknown origin. Respond with a JSON object containing 'isHalal' (boolean) and 'message' (string explaining why). Be conservative - if there's any doubt, mark as non-halal and explain why verification is needed. IMPORTANT: Respond with ONLY the JSON object, no markdown, no code blocks."
+                        content: "You are a halal food expert. Analyze the given ingredients and determine their halal status. Consider common non-halal ingredients like alcohol, pork derivatives, and animal-derived ingredients of unknown origin. Respond with a JSON object containing 'status' (string: 'halal', 'not_halal', or 'needs_verification') and 'message' (string explaining why). Use 'needs_verification' when ingredients could be halal but require confirmation of their source."
                     },
                     {
                         role: "user",
                         content: `Analyze these ingredients for halal compliance: ${ingredients}`
                     }
-                ]
+                ],
+                max_tokens: 500
             })
         });
 
@@ -52,12 +53,16 @@ export async function analyzeIngredients(ingredients) {
             console.log('Cleaned response:', cleanJson);
             const result = JSON.parse(cleanJson);
             console.log('Analysis result:', result);
-            return result;
+            return {
+                isHalal: result.status === 'halal',
+                needsVerification: result.status === 'needs_verification',
+                message: result.message
+            };
         } catch (e) {
             console.error('Error parsing OpenAI response:', e);
-            console.error('Raw content:', data.choices[0].message.content);
             return {
                 isHalal: false,
+                needsVerification: true,
                 message: "Unable to determine halal status. Please consult a halal certification authority."
             };
         }

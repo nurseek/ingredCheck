@@ -24,14 +24,22 @@ export async function performOCR(imageSource) {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "gpt-4-vision-preview",
+                model: "gpt-4o",
                 messages: [
                     {
                         role: "user",
                         content: [
                             {
                                 type: "text",
-                                text: "Read and extract the ingredients list from this food label image. Return ONLY the ingredients list, nothing else. If you can't find an ingredients list, say 'No ingredients list found.'"
+                                text: "You are a multilingual food label expert. Look at this food product image and follow these steps:\n" +
+                                      "1. First, confirm if you can see any text in the image (respond with 'YES' or 'NO')\n" +
+                                      "2. If YES, identify the language(s) present\n" +
+                                      "3. Find and extract the ingredients list in its ORIGINAL LANGUAGE - DO NOT TRANSLATE\n" +
+                                      "4. Format your response exactly like this example:\n" +
+                                      "TEXT_VISIBLE: YES\n" +
+                                      "LANGUAGES: Kazakh, Russian\n" +
+                                      "ORIGINAL_TEXT: [the ingredients list exactly as shown in the image, no translation]\n" +
+                                      "If you can't find ingredients, still provide the first two pieces of information."
                             },
                             {
                                 type: "image_url",
@@ -42,7 +50,7 @@ export async function performOCR(imageSource) {
                         ]
                     }
                 ],
-                max_tokens: 500
+                max_tokens: 1000
             })
         });
 
@@ -53,14 +61,29 @@ export async function performOCR(imageSource) {
             throw new Error(data.error.message);
         }
 
-        const extractedText = data.choices[0].message.content;
-        console.log('Extracted text:', extractedText);
+        const response_text = data.choices[0].message.content;
+        console.log('Raw GPT Response:', response_text);
 
-        if (extractedText.includes('No ingredients list found')) {
-            throw new Error('No ingredients list found in the image. Please ensure the ingredients are clearly visible.');
+        // Parse the structured response
+        const textVisible = response_text.match(/TEXT_VISIBLE: (YES|NO)/i)?.[1];
+        const languages = response_text.match(/LANGUAGES: ([^\n]+)/)?.[1];
+        const originalText = response_text.match(/ORIGINAL_TEXT: ([^\n]+)/)?.[1];
+
+        console.log('Parsed Response:', {
+            textVisible,
+            languages,
+            originalText
+        });
+
+        if (!textVisible || textVisible.toUpperCase() === 'NO') {
+            throw new Error('No readable text found in the image. Please ensure the image is clear and well-lit.');
         }
 
-        return extractedText.trim();
+        if (!originalText) {
+            throw new Error(`Text is visible in ${languages || 'unknown'} language(s), but no ingredients list was found. Please ensure you're uploading a food label with ingredients.`);
+        }
+
+        return originalText.trim();
     } catch (error) {
         console.error('Text extraction error:', error);
         throw new Error(error.message || 'Failed to extract text from image. Please try again.');

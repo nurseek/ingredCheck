@@ -109,12 +109,29 @@
       <!-- Results Section -->
       <div v-if="analysisResult" class="results-card">
         <div class="results-content">
-          <div class="result-icon" :class="{ 'result-halal': analysisResult.isHalal, 'result-not-halal': !analysisResult.isHalal }">
-            <span class="result-symbol">{{ analysisResult.isHalal ? '✓' : '✗' }}</span>
+          <div class="result-icon" :class="{
+            'result-halal': analysisResult.isHalal,
+            'result-not-halal': !analysisResult.isHalal && !analysisResult.needsVerification,
+            'result-verification': analysisResult.needsVerification
+          }">
+            <span class="result-symbol">
+              {{ analysisResult.isHalal ? '✓' : (analysisResult.needsVerification ? '?' : '✗') }}
+            </span>
           </div>
-          <h3 class="result-title" :class="{ 'text-success': analysisResult.isHalal, 'text-error': !analysisResult.isHalal }">
-            {{ analysisResult.isHalal ? 'Halal ✓' : 'Not Halal ✗' }}
+          <h3 class="result-title" :class="{
+            'text-success': analysisResult.isHalal,
+            'text-error': !analysisResult.isHalal && !analysisResult.needsVerification,
+            'text-warning': analysisResult.needsVerification
+          }">
+            {{ analysisResult.isHalal ? 'Halal ✓' : (analysisResult.needsVerification ? 'Needs Verification ?' : 'Not Halal ✗') }}
           </h3>
+          
+          <!-- Original Text Section -->
+          <div class="original-text-section">
+            <h4 class="original-text-title">Original Ingredients Text:</h4>
+            <p class="original-text-content">{{ extractedText }}</p>
+          </div>
+
           <p class="result-message">{{ analysisResult.message }}</p>
           
           <button 
@@ -167,6 +184,7 @@ export default {
     const analysisResult = ref(null);
     const isInitializingOCR = ref(false);
     const ocrError = ref(null);
+    const extractedText = ref('');
 
     onMounted(async () => {
       isInitializingOCR.value = true;
@@ -202,20 +220,22 @@ export default {
       try {
         // Extract text using OCR
         console.log('Starting image analysis...');
-        const extractedText = await performOCR(selectedImage.value);
-        console.log('Extracted text:', extractedText);
+        const text = await performOCR(selectedImage.value);
+        extractedText.value = text;
+        console.log('Extracted text:', text);
         
-        if (!extractedText || extractedText.trim().length === 0) {
+        if (!text || text.trim().length === 0) {
           throw new Error('No text could be extracted from the image. Please ensure the ingredients list is clearly visible.');
         }
 
         // Analyze ingredients
-        analysisResult.value = await analyzeIngredients(extractedText);
+        analysisResult.value = await analyzeIngredients(text);
       } catch (error) {
         console.error('Analysis failed:', error);
         ocrError.value = error.message;
         analysisResult.value = {
           isHalal: false,
+          needsVerification: true,
           message: error.message || "Failed to analyze the image. Please try again with a clearer photo."
         };
       } finally {
@@ -226,6 +246,7 @@ export default {
     const resetAnalysis = () => {
       clearImage();
       analysisResult.value = null;
+      extractedText.value = '';
       ocrError.value = null;
       fileInput.value.value = '';
       cameraInput.value.value = '';
@@ -242,6 +263,7 @@ export default {
       analysisResult,
       isInitializingOCR,
       ocrError,
+      extractedText,
       
       // Methods
       triggerFileInput,
@@ -538,6 +560,10 @@ export default {
   background: #fee2e2;
 }
 
+.result-verification {
+  background: #fef3c7;
+}
+
 .result-symbol {
   font-size: 24px;
 }
@@ -548,6 +574,10 @@ export default {
 
 .result-not-halal .result-symbol {
   color: #dc2626;
+}
+
+.result-verification .result-symbol {
+  color: #d97706;
 }
 
 .result-title {
@@ -562,6 +592,10 @@ export default {
 
 .text-error {
   color: #dc2626;
+}
+
+.text-warning {
+  color: #d97706;
 }
 
 .result-message {
@@ -624,5 +658,28 @@ export default {
 /* Smooth transitions */
 .btn, .upload-area, .remove-image-btn {
   transition: all 0.2s ease;
+}
+
+.original-text-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.original-text-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.original-text-content {
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 </style>
