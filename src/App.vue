@@ -146,97 +146,112 @@
 </template>
 
 <script>
-import { createWorker } from 'tesseract.js';
-
+import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { useImageUpload } from './composables/useImageUpload';
+import { initializeOCR, performOCR, cleanupOCR } from './services/ocr';
+import { analyzeIngredients } from './services/openai';
 
 export default {
   name: 'HalalCheck',
-  data() {
-    return {
-      selectedImage: null,
-      isAnalyzing: false,
-      analysisResult: null,
-      message: ''
-    }
-  },
-  methods: {
-    triggerFileInput() {
-      this.$refs.fileInput.click();
-    },
-    
-    takePhoto() {
-      this.$refs.cameraInput.click();
-    },
-    
-    handleFileSelect(event) {
-      const file = event.target.files[0];
-      if (file) {
-        this.processFile(file);
-      }
-    },
-    
-    handleDrop(event) {
-      const file = event.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) {
-        this.processFile(file);
-      }
-    },
-    
-    processFile(file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        this.selectedImage = e.target.result;
-        this.analysisResult = null;
-      };
-      reader.readAsDataURL(file);
-    },
-    
-    clearImage() {
-      this.selectedImage = null;
-      this.analysisResult = null;
-      this.$refs.fileInput.value = '';
-      this.$refs.cameraInput.value = '';
-    },
-    
-    async analyzeImage() {
-      this.isAnalyzing = true;
-      
+  setup() {
+    const {
+      selectedImage,
+      handleFileSelect,
+      handleDrop,
+      clearImage
+    } = useImageUpload();
+
+    const fileInput = ref(null);
+    const cameraInput = ref(null);
+    const isAnalyzing = ref(false);
+    const analysisResult = ref(null);
+    const isInitializingOCR = ref(false);
+    const ocrError = ref(null);
+
+    onMounted(async () => {
+      isInitializingOCR.value = true;
       try {
-        // Simulate API call - replace with actual OCR + AI analysis
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await initializeOCR();
+      } catch (error) {
+        console.error('Failed to initialize OCR:', error);
+        ocrError.value = error.message;
+      } finally {
+        isInitializingOCR.value = false;
+      }
+    });
 
-        console.log(this.selectedImage);
+    onBeforeUnmount(async () => {
+      await cleanupOCR();
+    });
 
-        const worker = await createWorker('kaz');
-        const ret = await worker.recognize(this.selectedImage);
-        console.log(ret.data.text);
-        this.message = ret.data.text;
-        await worker.terminate();
+    const triggerFileInput = () => {
+      fileInput.value.click();
+    };
 
+    const takePhoto = () => {
+      cameraInput.value.click();
+    };
+
+    const analyzeImage = async () => {
+      if (!selectedImage.value) return;
+
+      isAnalyzing.value = true;
+      analysisResult.value = null;
+      ocrError.value = null;
+
+      try {
+        // Extract text using OCR
+        console.log('Starting image analysis...');
+        const extractedText = await performOCR(selectedImage.value);
+        console.log('Extracted text:', extractedText);
         
-        // Mock result - replace with actual analysis logic
-        this.analysisResult = {
-          isHalal: Math.random() > 0.5,
-          message: this.message
-          
-          // Math.random() > 0.5 
-          //   ? "All ingredients appear to be halal-certified." 
-          //   : "Contains ingredients that may not be halal (pork gelatin detected).",
-          // confidence: 85
-        };
+        if (!extractedText || extractedText.trim().length === 0) {
+          throw new Error('No text could be extracted from the image. Please ensure the ingredients list is clearly visible.');
+        }
+
+        // Analyze ingredients
+        analysisResult.value = await analyzeIngredients(extractedText);
       } catch (error) {
         console.error('Analysis failed:', error);
+        ocrError.value = error.message;
+        analysisResult.value = {
+          isHalal: false,
+          message: error.message || "Failed to analyze the image. Please try again with a clearer photo."
+        };
       } finally {
-        this.isAnalyzing = false;
+        isAnalyzing.value = false;
       }
-    },
-    
-    resetAnalysis() {
-      this.selectedImage = null;
-      this.analysisResult = null;
-      this.$refs.fileInput.value = '';
-      this.$refs.cameraInput.value = '';
-    }
+    };
+
+    const resetAnalysis = () => {
+      clearImage();
+      analysisResult.value = null;
+      ocrError.value = null;
+      fileInput.value.value = '';
+      cameraInput.value.value = '';
+    };
+
+    return {
+      // Template refs
+      fileInput,
+      cameraInput,
+      
+      // State
+      selectedImage,
+      isAnalyzing,
+      analysisResult,
+      isInitializingOCR,
+      ocrError,
+      
+      // Methods
+      triggerFileInput,
+      takePhoto,
+      handleFileSelect,
+      handleDrop,
+      clearImage,
+      analyzeImage,
+      resetAnalysis
+    };
   }
 }
 </script>
